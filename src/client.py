@@ -3,6 +3,7 @@ import re
 import os
 import json
 import pyDH
+import base64
 import socket
 import hashlib
 import argparse
@@ -48,11 +49,11 @@ def parse_args():
         exit()
     return args
 
-# Auto-increment the packet sequence number
+# Auto-increment the packet sequence number by 2
 def get_and_increment_pkt():
     global PKT_NUMBER
     current_seq = PKT_NUMBER
-    PKT_NUMBER += 1
+    PKT_NUMBER += 2
     return current_seq
 
 # Perform Diffie-Hellman key exchange
@@ -60,16 +61,15 @@ def diffie_hellman(args, client):
     # Create packet
     sent_flags = {'SYN': True, 'RES': False, 'CRP': False, 'AUTH': False}
     seq_number = get_and_increment_pkt()
-    client_public_key = pyDH.DiffieHellman(args.modp).gen_public_key()
-    sent_data = {'modp_id': args.modp, 'pub_key': client_public_key}
+    client_public_key = pyDH.DiffieHellman(args.modp)
+    sent_data = {'modp_id': args.modp, 'pub_key': client_public_key.gen_public_key()}
     payload = json.dumps(sent_data).encode() # Encode dictionary to JSON as bytes
-    packet = build_packet(seq_number, sent_flags, payload)
+    packet = build_packet(sent_flags, seq_number, payload)
     
     # Process response
     recv_data = json.loads(send_and_receive_packet(sent_flags, seq_number, client, args, packet))
-    if recv_data['modp_id'] != sent_data['modp_id']:
-        if args.v:
-            print('[!] ')
+    if 'pub_key' not in recv_data:
+        if args.v: print('[!] Server response does not contain a public key')
         exit()
     shared_secret = client_public_key.gen_shared_key(recv_data['pub_key'])
     return shared_secret.encode('utf-8')
@@ -79,8 +79,8 @@ def authenticate(args, client, key):
     sent_flags = {'SYN': False, 'RES': False, 'CRP': False, 'AUTH': True}
     seq_number = get_and_increment_pkt()
     sent_data = {'auth': args.user}
-    payload = encrypt_aes(json.dumps(sent_data).encode(), key)
-    packet = build_packet(seq_number, sent_flags, payload)
+    payload = json.dumps(sent_data).encode()
+    packet = build_packet(sent_flags, seq_number, payload, key)
 
     # Process auth challenge
     recv_data = json.loads(decrypt_aes(send_and_receive_packet(sent_flags, seq_number, client, args, packet), key))
@@ -88,13 +88,14 @@ def authenticate(args, client, key):
         print(f'[!] Unexpected error during authentication sequence {recv_data["err"]}')
         exit()
     elif not 'auth_chal' in recv_data:
-        print('[!] Server has not responded with authentication challenge')
+        print('[!] Server response does not contain authentication challenge')
         exit()
     
     seq_number = get_and_increment_pkt()
-    chal_response = {'auth_solution': decrypt_rsa(recv_data['auth_chal'].encode(), args.keyfile)}
-    payload = encrypt_aes(json.dumps(chal_response).encode(), key)
-    packet = build_packet(seq_number, sent_flags, payload)
+    decrypted = decrypt_rsa(base64.b64decode(recv_data['auth_chal']), args.keyfile)
+    chal_response = {'auth_solution': base64.b64encode(decrypted).decode()}
+    payload = json.dumps(chal_response).encode()
+    packet = build_packet(sent_flags, seq_number, payload, key)
 
     # Process auth challenge
     recv_data = json.loads(decrypt_aes(send_and_receive_packet(sent_flags, seq_number, client, args, packet), key))
@@ -119,11 +120,11 @@ def send_commands(client, args, key):
         except ValueError:
             print('[!] Invalid command')
 
-    sent_flags = {'SYN': False, 'RES': False, 'CRP': False, 'AUTH': True}
+    sent_flags = {'SYN': False, 'RES': False, 'CRP': False, 'AUTH': False}
     seq_number = get_and_increment_pkt()
     sent_data = {'cmd': COMMANDS[cmd-1]}
-    payload = encrypt_aes(json.dumps(sent_data).encode(), key)
-    packet = build_packet(seq_number, sent_flags, payload)
+    payload = json.dumps(sent_data).encode()
+    packet = build_packet(sent_flags, seq_number, payload, key)
 
     # Process command response
     recv_data = json.loads(decrypt_aes(send_and_receive_packet(sent_flags, seq_number, client, args, packet), key))
@@ -139,28 +140,24 @@ def send_commands(client, args, key):
 
 def main():
     args = parse_args()
-    print_banner()
+    if args.v: print_banner()
     # Create UDP socket
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client.bind((args.lhost, args.lport))
-    if args.v:
-        print(f'[+] Attempting to connect to {args.rhost}:{args.rport}')
+    if args.v: print(f'[+] Attempting to connect to {args.rhost}:{args.rport}')
     # Calculate AES CBC key as SHA256 hash of the shared secret
     key = hashlib.sha256(diffie_hellman(args, client)).digest()
-    if args.v:
-        print('[+] Shared secrets established')
+    if args.v: print('[+] Shared secrets established')
 
     authenticate(args, client, key)
-    if args.v:
-        print(f'[+] Successfully authenticated as {args.user}')
+    if args.v: print(f'[+] Successfully authenticated as {args.user}')
     
     # Slightly more efficient than infinite loop with a break statement in a conditional
-    while send_commands(args, client, key):
+    while send_commands(client, args, key):
         pass
     
     client.close()
-    if args.v:
-        print('[+] Connection closed')
+    if args.v: print('[+] Connection closed')
     return 0        
  
 # Run main function
