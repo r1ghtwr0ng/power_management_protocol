@@ -1,3 +1,4 @@
 #!/bin/sh
 
-# ADD COMMANDS FOR SUSPENDING HERE
+echo '[!] No suspend commands provided'
+# Add commands for syspending the system here
