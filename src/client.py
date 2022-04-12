@@ -8,19 +8,9 @@ import socket
 import hashlib
 import argparse
 from pmp import *
+from pmp_cmd import *
 
 PKT_NUMBER = 0 # Global variable for packet numbering
-COMMANDS = ['PWR_STAT', 'BTRY_LVL', 'SUSPND', 'REBOOT', 'PWROFF', 'END_CONN'] # Available commands
-
-# Print program banner
-def print_banner():
-    print(f'\n\n{"-"*70}\n{"<"*29} PMP CLIENT {">"*29}\n{"-"*70}\n\n')
-
-# Print all available commands with selection numbers
-def print_commands():
-    for i in range(len(COMMANDS)):
-        print(f'  [{i+1}] {COMMANDS[i]}')
-    print('  [Q] Quit')
 
 # Parse arguments provided by the user
 def parse_args():
@@ -140,7 +130,7 @@ def send_commands(client, args, key):
 
 def main():
     args = parse_args()
-    if args.v: print_banner()
+    if args.v: print_banner('PMP CLIENT')
     # Create UDP socket
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client.bind((args.lhost, args.lport))

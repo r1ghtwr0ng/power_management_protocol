@@ -11,17 +11,13 @@ import random
 import hashlib
 import argparse
 from pmp import *
+from pmp_cmd import *
 from threading import Thread
 
 # No I will not make classes, OOP is lame
 CONN_STATES = {}
 BUFFER_SIZE = 4096
 INACTIVE_TIMEOUT = 120 # If a connection does not send a packet for 120 seconds, its state is wiped
-COMMANDS = ['PWR_STAT', 'BTRY_LVL', 'SUSPND', 'REBOOT', 'PWROFF', 'END_CONN'] # Available commands
-
-# Print program banner
-def print_banner():
-    print(f'\n\n{"-"*70}\n{"<"*29} PMP SERVER {">"*29}\n{"-"*70}\n\n')
 
 # Parse arguments provided by the user
 def parse_args():
@@ -61,6 +57,12 @@ def deletion_thread(address, port):
             CONN_STATES.pop(address)
             return
         CONN_STATES[address]['TTL'] -= 1
+
+# Set address TTL to 0 and wait for deletion thread to get rid of it
+def end_conn(address):
+    global CONN_STATES
+    CONN_STATES[address]['TTL'] = 0
+    return
 
 # Create new conn status or update TTL
 def update_conn_status(address):
@@ -141,7 +143,14 @@ def cmd_sequence(server, recv_flags, recv_seq, parsed_json, address, args):
         if args.v: print('[!] Client provided an invalid command')
         server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_CMD'}, address, args, key)
         return
-    server_response(server, recv_flags, recv_seq+1, {'ok': 'COMMAND_RESPONSE'}, address, args, key)
+    elif parsed_json['cmd'] == 'END_CONN':
+        server_response(server, recv_flags, recv_seq+1, {'ok': 'CONNECTION CLOSED'}, address, args, key)
+        end_conn(address)
+        return
+    elif args.debug:
+        server_response(server, recv_flags, recv_seq+1, {'ok': 'COMMAND_RESPONSE'}, address, args, key)
+        return
+    server_response(server, recv_flags, recv_seq+1, {'ok': run_cmd( parsed_json['cmd'])}, address, args, key)
     return
 
 # Determine what action to perform for a given packet
@@ -202,8 +211,8 @@ def listen_loop(server, args, config):
 
 def main():
     args = parse_args()
-    if args.v: print_banner(); print(f'[+] Starting server at {args.lhost}:{args.lport}')
-    if args.debug: print('-'*70)
+    if args.v: print_banner('PMP SERVER'); print(f'[+] Starting server at {args.lhost}:{args.lport}')
+    if args.debug: print('-'*get_terminal_width())
     try:
         config = json.loads(open(args.config).read()) # Load config
     except (UnicodeDecodeError, json.decoder.JSONDecodeError) as e:

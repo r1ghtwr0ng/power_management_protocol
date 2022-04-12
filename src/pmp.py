@@ -2,6 +2,8 @@ import re
 import json
 import socket
 import binascii
+import textwrap
+from pmp_cmd import *
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad, unpad
@@ -143,11 +145,17 @@ def handle_errors(recv_packet):
 
 # Print entirety of the packet
 def print_packet(flags, seq, data, key):
+    term_width = get_terminal_width()
     if key != None and not flags['SYN']:
         data = decrypt_aes(data, key)
-    print('-'*70)
-    print(f'SYN: {int(flags["SYN"])}, RES: {int(flags["RES"])}, CRP: {int(flags["CRP"])}, AUTH: {int(flags["AUTH"])}')
-    print(f'SEQUENCE: {seq}')
-    print(f'DATA: {data}')
-    print(f'AES KEY: {key}')
-    print('-'*70)
+    packet = []
+    packet.append(f'SYN: {int(flags["SYN"])}, RES: {int(flags["RES"])}, CRP: {int(flags["CRP"])}, AUTH: {int(flags["AUTH"])}\n')
+    packet.append(f'SEQUENCE: {seq}\n')
+    packet.append(f'DATA: {data}\n')
+    packet.append(f'AES KEY: {key}\n')
+    print('-'*term_width)
+    for line in packet:
+        for wrapped in textwrap.wrap(line, width=term_width-2):
+            print(wrapped)
+    print('-'*term_width)
+    return
