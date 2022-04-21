@@ -14,6 +14,8 @@ It allows easily viewing a remote device's power settings and managing its state
 &nbsp;&nbsp;&nbsp;&nbsp;For more detailed information about the protocol users are encouraged to read the `pmp_rfc.txt` RFC file included in this repo.
 
 ### Usage
+- Before running the program ensure you have all necessary pip packages by running `pip install requirements.txt`
+
 - By default the server will execute the shutdown and reboot commands if an authenticated user sends them. If you do not wish to do that, make sure you run the server with `--debug`
 
 - To allow users to authenticate, first generate an RSA key pair. You can do this by writing:
