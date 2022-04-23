@@ -29,10 +29,10 @@ power management of remote machines.
 -----------
 
 
-    PMP is a half-duplex, stateful, Peer to Peer (P2P) Application
-layer protocol, built on top of UDP [RFC0768] for sending and
-receiving information about battery status, power consumption, as well
-as commands to suspend, reboot or power off a remote machine. The
+    PMP is a half-duplex, stateful, Client-Server  Application layer
+protocol, built on top of UDP [RFC0768] for sending and receiving
+information about battery status, power consumption, as well as
+commands to suspend, reboot or power off a remote machine. The
 protocol utilizes Diffie-Hellman key exchange [RFC2631] to establish a
 shared secret, Advanced Encryption Standard (AES) algorithm [RFC3826]
 to ensure data security and Rivest–Shamir–Adleman (RSA) cryptographic
@@ -44,7 +44,7 @@ keys [RFC8017] for authentication.
 
 
    The protocol implementations MUST:
-1) Implement PMP as a Peer to Peer (P2P) Application layer protocol.
+1) Implement PMP as a Client-Server Application layer protocol.
 2) Be built on top of the UDP protocol.
 3) Implement half-duplex data transmission.
 4) Ensure data integrity using the CRC32 algorithm to calculate
@@ -403,16 +403,11 @@ amount of time has passed without receiving a packet e.g. 120 seconds.
 RFC 2631, DOI 10.17487/RFC2631, June 1999, <https://www.rfc-editor.org/info/rfc2631>.
 
 
-                                                            [ Page 6 ]
-________________
-
-
 [RFC2663] Srisuresh, P. and M. Holdrege, "IP Network Address
 Translator (NAT) Terminology and Considerations", RFC 2663, DOI
 10.17487/RFC2663, August 1999,
 <https://www.rfc-editor.org/info/rfc2663>.
-
-
+                                                            [ Page 6 ]
 [RFC8017] Moriarty, K., Ed., Kaliski, B., Jonsson, J., and A. Rusch,
 "PKCS #1: RSA Cryptography Specifications Version 2.2", RFC 8017, DOI 10.17487/RFC8017, November 2016,
 <https://www.rfc-editor.org/info/rfc8017>.
