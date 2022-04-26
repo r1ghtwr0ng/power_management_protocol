@@ -10,6 +10,7 @@ import string
 import random
 import hashlib
 import argparse
+import math
 from pmp import *
 from pmp_cmd import *
 from threading import Thread
@@ -52,11 +53,12 @@ def deletion_thread(address, port):
     # Thread module does not like passing tuples as function arguments
     address = (address, port)
     while True:
-        time.sleep(1)
+        time.sleep(math.ceil(INACTIVE_TIMEOUT/2))
         if CONN_STATES[address]['TTL'] <= 0:
+            print(f'[!] Closed connection {address} due to timeout')
             CONN_STATES.pop(address)
             return
-        CONN_STATES[address]['TTL'] -= 1
+        CONN_STATES[address]['TTL'] -= int(math.ceil(INACTIVE_TIMEOUT/2))
 
 # Set address TTL to 0 and wait for deletion thread to get rid of it
 def end_conn(address):
@@ -158,16 +160,16 @@ def handle_packet(server, packet, address, args, config):
     # Update connection status
     update_conn_status(address)
     # Unpack received packet
-    unpacked = verify_and_unpack(packet, args)
+    unpacked_tuple = verify_and_unpack(packet, args)
     key = CONN_STATES[address]['key']
-    if None in unpacked:
+    (recv_flags, recv_seq, unpacked) = unpacked_tuple
+    if None in unpacked_tuple:
         if recv_seq != None:
             # If the packet sequence number is not corrupted, reply with CRP packet
             flags = {'SYN': False, 'RES': False, 'CRP': True, 'AUTH': False}
-            if args.v: print('[!] Corrupted packet')
-            server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_PKT'}, address, args, key)
+            if args.v: print('[!] Corrupted packet received')
+            server_response(server, flags, recv_seq+1, {'err': 'BAD_PKT'}, address, args, key)
         return
-    (recv_flags, recv_seq, unpacked) = unpacked
 
     if args.debug: print('RECV'); print_packet(recv_flags, recv_seq, unpacked, key)
     try:

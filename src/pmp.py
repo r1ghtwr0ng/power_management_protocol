@@ -117,7 +117,7 @@ def send_and_receive_packet(sent_flags, sent_seq, client, args, packet):
                 print(f'[!] Host {args.rhost} is unreachable on port {args.rport}')
                 exit()
             else:
-                if args.v: print(f'[-] Timeout: {CURRENT_TIMEOUTS} remaining     ', end='\r')
+                if args.v: print(f'[-] Retransmitted packet due to timeout: {CURRENT_TIMEOUTS} remaining  ', end='\r')
                 CURRENT_TIMEOUTS -= 1
     print(f'[!] Host {args.rhost} is unreachable on port {args.rport}')
     exit()
@@ -125,7 +125,7 @@ def send_and_receive_packet(sent_flags, sent_seq, client, args, packet):
 # Send response to client
 def server_response(server, flags, seq_number, payload, address, args, key=None):
     flags['RES'] = True
-    if args.debug: print('SENT'); print_packet(flags, seq_number, payload, None)
+    if args.debug: print('SENT'); print_packet(flags, seq_number, payload, key, True)
     payload = json.dumps(payload).encode()
     if key != None:
         payload = encrypt_aes(payload, key)
@@ -144,9 +144,9 @@ def handle_errors(recv_packet):
     return False
 
 # Print entirety of the packet
-def print_packet(flags, seq, data, key):
+def print_packet(flags, seq, data, key, skip_decryption=False):
     term_width = get_terminal_width()
-    if key != None and not flags['SYN']:
+    if key != None and not flags['SYN'] and not skip_decryption:
         data = decrypt_aes(data, key)
     packet = []
     packet.append(f'SYN: {int(flags["SYN"])}, RES: {int(flags["RES"])}, CRP: {int(flags["CRP"])}, AUTH: {int(flags["AUTH"])}\n')
