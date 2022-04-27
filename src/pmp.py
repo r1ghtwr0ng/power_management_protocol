@@ -52,8 +52,7 @@ def build_packet(flags, seq_number, data, key=None):
     for i in range(len(PKT_FLAGS)):
         header += (flags[PKT_FLAGS[i]] << 15-i) # Bitwise shift left to align packet flags
     header += seq_number
-    hex_header = format(header, '04x') # Format header in hexadecimal
-    header = bytes.fromhex(hex_header) # Header in bytes
+    header = bytes.fromhex(format(header, '04x')) # Header padded to 2 bytes
     if key != None: data = encrypt_aes(data, key)
     packet = header + data
     checksum = binascii.crc32(packet).to_bytes(4, byteorder='big') # Calculate packet checksum
@@ -108,6 +107,7 @@ def send_and_receive_packet(sent_flags, sent_seq, client, args, packet):
             CURRENT_TIMEOUTS = TIMEOUT_LIMIT # Reset timeouts
             unpacked = verify_and_unpack(raw_packet, args)
             if None in unpacked:
+                if args.v: print(f'[-] Invalid response received.')
                 continue
             (recv_flags, recv_seq, unpacked) = unpacked
             if _validate_headers(sent_flags, sent_seq, recv_flags, recv_seq, args):
@@ -119,7 +119,7 @@ def send_and_receive_packet(sent_flags, sent_seq, client, args, packet):
             else:
                 if args.v: print(f'[-] Retransmitted packet due to timeout: {CURRENT_TIMEOUTS} remaining  ', end='\r')
                 CURRENT_TIMEOUTS -= 1
-    print(f'\n[!] Host {args.rhost} is unreachable on port {args.rport}')
+    print(f'\n[!] Host {args.rhost}:{args.rport} does not respond appropriately to request.')
     exit()
 
 # Send response to client
