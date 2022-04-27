@@ -13,7 +13,7 @@ import argparse
 import math
 from pmp import *
 from pmp_cmd import *
-from threading import Thread
+from threading import Thread, Event, Semaphore
 
 # No I will not make classes, OOP is lame
 CONN_STATES = {}
@@ -44,46 +44,76 @@ def parse_args():
         exit()
     return args
 
-# Whenever a new connection state is saved, a deletion thread is spawned
-# The thread decrements the connection TTL each second until it reaches 0,
-# at which point the state is wiped. TTL is reset upon receival of new
-# packets from a connection
-def deletion_thread(address, port):
+# Allow for modification of connection states without causing race conditions
+def modify_conn_states(address, modification={}, delete=False):
     global CONN_STATES
+    try:
+        CONN_STATES[address]['SEMAPHORE'].acquire()
+        # Enter critical region
+        if delete:
+            semaphore = CONN_STATES[address]['SEMAPHORE']
+            thread_event = CONN_STATES[address]['THREAD_EVENT']
+            CONN_STATES.pop(address)
+            thread_event.set() # Interrupt thread after deletion
+            semaphore.release() # The semaphore object will not be accessible anymore but its good practice to release it
+            return
+        for key in modification:
+            CONN_STATES[address][key] = modification[key]
+        CONN_STATES[address]['SEMAPHORE'].release()
+        return
+    except KeyError as e:
+        if delete:
+            return
+        # Create new connection
+        CONN_STATES[address] = {'KEY': None, 'AUTHENTICATED': False, 'SEMAPHORE': Semaphore()}
+        return
+
+# Fetch info from CONN_STATES when it's not being modified
+def get_conn_state(address, key):
+    try:
+        CONN_STATES[address]['SEMAPHORE'].acquire()
+        result = CONN_STATES[address][key]
+        CONN_STATES[address]['SEMAPHORE'].release()
+        return result
+    except KeyError:
+        return None
+
+# Whenever a new connection state is saved, a deletion thread is spawned.
+# The thread starts a wait event, which if interrupted is started again 
+# (or the thread dies if the connection has been deleted).
+# If the event times out, the connection state is removed. The event is
+# interrupted whenever a new packet is received or the connection is wiped.
+def deletion_thread(address, port):
     # Thread module does not like passing tuples as function arguments
     address = (address, port)
     while True:
-        time.sleep(math.ceil(INACTIVE_TIMEOUT/2))
-        if CONN_STATES[address]['TTL'] <= 0:
-            print(f'[!] Closed connection {address} due to timeout')
-            CONN_STATES.pop(address)
+        thread_event = Event()
+        modify_conn_states(address, {'THREAD_EVENT': thread_event})
+        if (not thread_event.wait(INACTIVE_TIMEOUT)):
+            modify_conn_states(address, {}, True) # Delete the connection state
+            print(f'[!] Closed connection {address}')
             return
-        CONN_STATES[address]['TTL'] -= int(math.ceil(INACTIVE_TIMEOUT/2))
+        elif (address not in CONN_STATES):
+            return
 
-# Set address TTL to 0 and wait for deletion thread to get rid of it
-def end_conn(address):
-    global CONN_STATES
-    CONN_STATES[address]['TTL'] = 0
-    return
+# Cause the deletion thread to get interrupted
+def interrupt_thread(address):
+    thread_event = get_conn_state(address, 'THREAD_EVENT') # Fetch thread event
+    if thread_event != None:
+        thread_event.set() # Wake up thread
+        return True
+    return False
 
-# Create new conn status or update TTL
+# Create new conn status or interrupt thread event
 def update_conn_status(address):
-    global CONN_STATES
-    if address in CONN_STATES:
-        # Handle race condition if deletion thread gets rid of conn
-        try:
-            CONN_STATES[address]['TTL'] = INACTIVE_TIMEOUT
-            return
-        except KeyError:
-            update_conn_status(address)
-            return
-    CONN_STATES[address] = {'key': None, 'authenticated': False, 'TTL': INACTIVE_TIMEOUT}
+    if interrupt_thread(address):
+        return
+    modify_conn_states(address) # Create connection status
     Thread(target=deletion_thread, args=(address)).start()
     return
 
 # Perform Diffie-Hellman key exchange
 def key_exchange(server, recv_flags, recv_seq, parsed_json, address, args):
-    global CONN_STATES
     # Process response
     if ('modp_id' not in parsed_json) or ('pub_key' not in parsed_json):
         if args.v: print('[!] Client has not sent MODP_ID or PUBLIC_KEY for DH key exchange')
@@ -93,14 +123,12 @@ def key_exchange(server, recv_flags, recv_seq, parsed_json, address, args):
     server_response(server, recv_flags, recv_seq+1, payload, address, args)
     # Calculate and store encryption key for connection
     shared_secret = server_public_key.gen_shared_key(parsed_json['pub_key'])
-    CONN_STATES[address]['key'] = hashlib.sha256(shared_secret.encode('utf-8')).digest()
+    modify_conn_states(address, {'KEY': hashlib.sha256(shared_secret.encode('utf-8')).digest()})
     return
 
 # Handle authentication requests from a client
 def auth_sequence(server, recv_flags, recv_seq, parsed_json, address, args, config):
-    global CONN_STATES
-
-    key = CONN_STATES[address]['key']
+    key = get_conn_state(address, 'KEY')
     # Check initial authentication request
     if 'auth' in parsed_json:
         if parsed_json['auth'] not in config:
@@ -109,24 +137,24 @@ def auth_sequence(server, recv_flags, recv_seq, parsed_json, address, args, conf
         
         # Cryptographically secure 64 byte hexadecimal generator
         challenge = ''.join(random.SystemRandom().choice(string.hexdigits) for _ in range(64)).encode()
-        CONN_STATES[address]['username'] = parsed_json['auth']
-        CONN_STATES[address]['auth_chal'] = base64.b64encode(challenge).decode()
-        if args.debug: print(f'[+] PROVIDED AUTH CHALLENGE: {CONN_STATES[address]["auth_chal"]}')
+        modify_conn_states(address, {'USERNAME': parsed_json['auth']})
+        modify_conn_states(address, {'AUTH_CHAL': base64.b64encode(challenge).decode()})
+        if args.debug: print(f'[+] PROVIDED AUTH CHALLENGE: {get_conn_state(address, "AUTH_CHAL")}')
         server_response(server, recv_flags, recv_seq+1, {'auth_chal': base64.b64encode(encrypt_rsa(challenge, config[parsed_json['auth']])).decode()}, address, args, key)
         return
     # Check authentication solution response
     elif 'auth_solution' in parsed_json:
-        if 'auth_chal' not in CONN_STATES[address]:
+        if get_conn_state(address, 'AUTH_CHAL') == None:
             if args.v: print('[!] Client provided auth solution but challenge was not issued')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_AUTH'}, address, args, key)
             return
 
-        if parsed_json['auth_solution'] != CONN_STATES[address]['auth_chal']:
+        if parsed_json['auth_solution'] != get_conn_state(address, 'AUTH_CHAL'):
             if args.v: print('[!] Client did not solve authentication challenge')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_AUTH'}, address, args, key)
             return
-
-        CONN_STATES[address]['authenticated'] = True
+        # Set client state as authenticated
+        modify_conn_states(address, {'AUTHENTICATED': True})
         server_response(server, recv_flags, recv_seq+1, {'ok': 'AUTHENTICATED'}, address, args, key)
         return
 
@@ -136,7 +164,7 @@ def auth_sequence(server, recv_flags, recv_seq, parsed_json, address, args, conf
 
 # Perform commands
 def cmd_sequence(server, recv_flags, recv_seq, parsed_json, address, args):
-    key = CONN_STATES[address]['key']
+    key = get_conn_state(address, 'KEY')
     if 'cmd' not in parsed_json:
         if args.v: print('[!] Client did not provide command')
         server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_CMD'}, address, args, key)
@@ -147,7 +175,7 @@ def cmd_sequence(server, recv_flags, recv_seq, parsed_json, address, args):
         return
     elif parsed_json['cmd'] == 'END_CONN':
         server_response(server, recv_flags, recv_seq+1, {'ok': 'CONNECTION CLOSED'}, address, args, key)
-        end_conn(address)
+        modify_conn_states(address, {}, True) # Delete connection
         return
     elif args.debug:
         server_response(server, recv_flags, recv_seq+1, {'ok': 'COMMAND_RESPONSE'}, address, args, key)
@@ -161,7 +189,7 @@ def handle_packet(server, packet, address, args, config):
     update_conn_status(address)
     # Unpack received packet
     unpacked_tuple = verify_and_unpack(packet, args)
-    key = CONN_STATES[address]['key']
+    key = get_conn_state(address, 'KEY')
     (recv_flags, recv_seq, unpacked) = unpacked_tuple
     if None in unpacked_tuple:
         if recv_seq != None:
@@ -194,7 +222,7 @@ def handle_packet(server, packet, address, args, config):
         elif recv_flags['AUTH']:
             auth_sequence(server, recv_flags, recv_seq, json.loads(decrypt_aes(unpacked, key)), address, args, config)
             return
-        elif not CONN_STATES[address]['authenticated']:
+        elif not get_conn_state(address, 'AUTHENTICATED'):
             if args.v: print('[!] Client did not provide username or authentication challenge solution')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_PERM'}, address, args, key)
             return
@@ -208,7 +236,7 @@ def handle_packet(server, packet, address, args, config):
 # Receive datagram and send off for processing
 def listen_loop(server, args, config):
     while True:
-        packet, address = server.recvfrom(BUFFER_SIZE)
+        (packet, address) = server.recvfrom(BUFFER_SIZE)
         handle_packet(server, packet, address, args, config)
 
 def main():

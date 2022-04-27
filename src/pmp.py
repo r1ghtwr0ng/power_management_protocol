@@ -114,12 +114,12 @@ def send_and_receive_packet(sent_flags, sent_seq, client, args, packet):
                 return unpacked
         except socket.timeout:
             if CURRENT_TIMEOUTS <= 0:
-                print(f'[!] Host {args.rhost} is unreachable on port {args.rport}')
+                print(f'\n[!] Host {args.rhost} is unreachable on port {args.rport}')
                 exit()
             else:
                 if args.v: print(f'[-] Retransmitted packet due to timeout: {CURRENT_TIMEOUTS} remaining  ', end='\r')
                 CURRENT_TIMEOUTS -= 1
-    print(f'[!] Host {args.rhost} is unreachable on port {args.rport}')
+    print(f'\n[!] Host {args.rhost} is unreachable on port {args.rport}')
     exit()
 
 # Send response to client
