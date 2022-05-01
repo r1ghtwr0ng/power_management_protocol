@@ -1,7 +1,9 @@
 # Module imports
 import re
 import os
+import hmac
 import json
+import math
 import time
 import pyDH
 import base64
@@ -10,7 +12,6 @@ import string
 import random
 import hashlib
 import argparse
-import math
 from pmp import *
 from pmp_cmd import *
 from threading import Thread, Event, Semaphore
@@ -148,8 +149,8 @@ def auth_sequence(server, recv_flags, recv_seq, parsed_json, address, args, conf
             if args.v: print('[!] Client provided auth solution but challenge was not issued')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_AUTH'}, address, args, key)
             return
-
-        if parsed_json['auth_solution'] != get_conn_state(address, 'AUTH_CHAL'):
+        # Perform constant time comparison to mitigate timing attacks
+        if not hmac.compare_digest(parsed_json['auth_solution'], get_conn_state(address, 'AUTH_CHAL')):
             if args.v: print('[!] Client did not solve authentication challenge')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_AUTH'}, address, args, key)
             return
