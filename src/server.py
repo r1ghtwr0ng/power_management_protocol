@@ -1,6 +1,7 @@
 # Module imports
 import re
 import os
+import sys
 import hmac
 import json
 import math
@@ -25,12 +26,12 @@ INACTIVE_TIMEOUT = 120 # If a connection does not send a packet for 120 seconds,
 def parse_args():
     # Parse arguments
     parser = argparse.ArgumentParser(description='Server application for Power Management Protocol (PMP).')
+    parser.add_argument('--config', '-c', default='auth_config.json',required=True, help='(Required) Specify JSON file with allowed users and their public keys')
     parser.add_argument('-v', default=False, action='store_true', help='Perform verbose output')
-    parser.add_argument('--debug', default=False, action='store_true', help='Print debug information (e.g. full packets, AES keys)')
-    parser.add_argument('--config', default='auth_config.json',required=True, help='(Optional) Specify JSON file with allowed users and their public keys')
-    parser.add_argument('--lhost', default='127.0.0.1', help='(Optional) Specify the local host IP address. Default: 127.0.0.1')
-    parser.add_argument('--lport', default=4444, type=int, help='(Optional) Specify the local port. Default: 4444')
-    parser.add_argument('--timeout', default=2, type=int, help='(Optional) Set packet timeout in seconds. Default: 2 (sec)')
+    parser.add_argument('--debug', '-d', default=False, action='store_true', help='Print debug information (e.g. full packets, AES keys)')
+    parser.add_argument('--lhost', '-a', default='127.0.0.1', help='Specify the local host IP address. Default: 127.0.0.1')
+    parser.add_argument('--lport', '-p', default=8888, type=int, help='Specify the local port. Default: 8888')
+    parser.add_argument('--timeout', '-t', default=2, type=int, help='Set packet timeout in seconds. Default: 2 (sec)')
     args = parser.parse_args()
     # Validate IPv4 addresses
     ip_regex = re.compile('^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
@@ -95,6 +96,7 @@ def deletion_thread(address, port):
             print(f'[!] Closed connection {address}')
             return
         elif (address not in CONN_STATES):
+            print(f'[+] Connection {address} closed by client')
             return
 
 # Cause the deletion thread to get interrupted
@@ -175,7 +177,7 @@ def cmd_sequence(server, recv_flags, recv_seq, parsed_json, address, args):
         server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_CMD'}, address, args, key)
         return
     elif parsed_json['cmd'] == 'END_CONN':
-        server_response(server, recv_flags, recv_seq+1, {'ok': 'CONNECTION CLOSED'}, address, args, key)
+        server_response(server, recv_flags, recv_seq+1, {'ok': 'CLOSED_CONN'}, address, args, key)
         modify_conn_states(address, {}, True) # Delete connection
         return
     elif args.debug:
@@ -227,7 +229,8 @@ def handle_packet(server, packet, address, args, config):
             if args.v: print('[!] Client did not provide username or authentication challenge solution')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_PERM'}, address, args, key)
             return
-        cmd_sequence(server, recv_flags, recv_seq, json.loads(decrypt_aes(unpacked, key)), address, args)
+        command_dict = json.loads(decrypt_aes(unpacked, key))
+        cmd_sequence(server, recv_flags, recv_seq, command_dict, address, args)
         return
     except EOFError as e:
         if args.v: print('[!] Client sent invalid JSON')
@@ -254,4 +257,13 @@ def main():
     server.bind((args.lhost, args.lport))
     listen_loop(server, args, config)
 
-main()
+# Handle Ctrl+C gracefully
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\n[+] Quitting')
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)

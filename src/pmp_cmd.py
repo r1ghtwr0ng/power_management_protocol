@@ -70,6 +70,8 @@ def run_cmd(command):
         return 'PLUGGED IN' if battery.power_plugged else 'NOT PLUGGED IN'
     elif command == 'BTRY_LVL':
         return str(f'{battery.percent}%')
+    elif command == 'END_CONN':
+        return 'CLOSED_CONN'
     plt = platform.platform()
     Thread(target=critical_command, args=(plt, command))
     return f'{command} in {SUSPEND_TIME} sec'

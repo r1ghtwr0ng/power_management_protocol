@@ -1,6 +1,7 @@
 # Module imports
 import re
 import os
+import sys
 import json
 import pyDH
 import base64
@@ -13,18 +14,18 @@ from pmp_cmd import *
 PKT_NUMBER = 0 # Global variable for packet numbering
 
 # Parse arguments provided by the user
-def parse_args():
+def handle_args():
     # Parse arguments
     parser = argparse.ArgumentParser(description='Client application for Power Management Protocol (PMP).')
     parser.add_argument('-v', default=False, action='store_true', help='Perform verbose output')
-    parser.add_argument('--keyfile', required=True, help='(Required) Specify RSA private key file')
-    parser.add_argument('--user', required=True, help='(Required) Specify username for authentication')
-    parser.add_argument('--rhost', required=True, help='(Required) Specify the target IP address')
-    parser.add_argument('--rport', default=8888, type=int, help='(Optional) Specify the target port. Default: 8888')
-    parser.add_argument('--lhost', default='127.0.0.1', help='(Optional) Specify the local host IP address. Default: 127.0.0.1')
-    parser.add_argument('--lport', default=4444, type=int, help='(Optional) Specify the local port. Default: 4444')
-    parser.add_argument('--timeout', default=2, type=int, help='(Optional) Set packet timeout in seconds. Default: 2 (sec)')
-    parser.add_argument('--modp', choices=[5, 14, 15, 16, 17, 18], default=14, type=int, help='(Optional) Set MODP group used for generating the Diffie-Hellman public key. Default: 14\nValid MODP IDs: 5, 14, 15, 16, 17, 18')
+    parser.add_argument('--keyfile', '-k', required=True, help='(Required) Specify RSA private key file')
+    parser.add_argument('--user', '-u',required=True, help='(Required) Specify username for authentication')
+    parser.add_argument('--rhost', '-s', default='127.0.0.1', help='Specify the server IP address')
+    parser.add_argument('--rport', '-p', default=8888, type=int, help='Specify the target port. Default: 8888')
+    parser.add_argument('--lhost', '-a', default='127.0.0.1', help='Specify the local host IP address. Default: 127.0.0.1')
+    parser.add_argument('--lport', '-P', default=0, type=int, help='Specify the local port. The program will select a random free port by default.')
+    parser.add_argument('--timeout', '-t', default=2, type=int, help='Set packet timeout in seconds. Default: 2 (sec)')
+    parser.add_argument('--modp', '-m', choices=[5, 14, 15, 16, 17, 18], default=14, type=int, help='Set MODP group used for generating the Diffie-Hellman public key. Default: 14\nValid MODP IDs: 5, 14, 15, 16, 17, 18')
     args = parser.parse_args()
     # Validate IPv4 addresses
     ip_regex = re.compile('^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
@@ -129,7 +130,7 @@ def send_commands(client, args, key):
     
 
 def main():
-    args = parse_args()
+    args = handle_args()
     if args.v: print_banner('PMP CLIENT')
     # Create UDP socket
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -150,5 +151,13 @@ def main():
     if args.v: print('[+] Connection closed')
     return 0        
  
-# Run main function
-main()
+# Handle Ctrl+C gracefully
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\n[+] Quitting')
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
