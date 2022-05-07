@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument('--config', '-c', default='auth_config.json',required=True, help='(Required) Specify JSON file with allowed users and their public keys')
     parser.add_argument('-v', default=False, action='store_true', help='Perform verbose output')
     parser.add_argument('--debug', '-d', default=False, action='store_true', help='Print debug information (e.g. full packets, AES keys)')
-    parser.add_argument('--lhost', '-a', default='127.0.0.1', help='Specify the local host IP address. Default: 127.0.0.1')
+    parser.add_argument('--lhost', '-a', default='0.0.0.0', help='Specify the local host IP address. Default: 0.0.0.0')
     parser.add_argument('--lport', '-p', default=8888, type=int, help='Specify the local port. Default: 8888')
     parser.add_argument('--timeout', '-t', default=2, type=int, help='Set packet timeout in seconds. Default: 2 (sec)')
     args = parser.parse_args()
