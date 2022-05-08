@@ -125,7 +125,7 @@ def send_and_receive_packet(sent_flags, sent_seq, client, args, packet):
 # Send response to client
 def server_response(server, flags, seq_number, payload, address, args, key=None):
     flags['RES'] = True
-    if args.debug: print('SENT'); print_packet(flags, seq_number, payload, key, True)
+    if args.debug: print(f'SENT TO: {address}'); print_packet(flags, seq_number, payload, key, True)
     payload = json.dumps(payload).encode()
     if key != None:
         payload = encrypt_aes(payload, key)

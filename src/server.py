@@ -26,12 +26,13 @@ INACTIVE_TIMEOUT = 120 # If a connection does not send a packet for 120 seconds,
 def parse_args():
     # Parse arguments
     parser = argparse.ArgumentParser(description='Server application for Power Management Protocol (PMP).')
-    parser.add_argument('--config', '-c', default='auth_config.json',required=True, help='(Required) Specify JSON file with allowed users and their public keys')
+    parser.add_argument('--config', '-c', default='auth_config.json', required=True, help='(Required) Specify JSON file with allowed users and their public keys')
     parser.add_argument('-v', default=False, action='store_true', help='Perform verbose output')
     parser.add_argument('--debug', '-d', default=False, action='store_true', help='Print debug information (e.g. full packets, AES keys)')
     parser.add_argument('--lhost', '-a', default='0.0.0.0', help='Specify the local host IP address. Default: 0.0.0.0')
     parser.add_argument('--lport', '-p', default=8888, type=int, help='Specify the local port. Default: 8888')
     parser.add_argument('--timeout', '-t', default=2, type=int, help='Set packet timeout in seconds. Default: 2 (sec)')
+    parser.add_argument('--noauth', default=False, action='store_true', help='Do not perform client authentication')
     args = parser.parse_args()
     # Validate IPv4 addresses
     ip_regex = re.compile('^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
@@ -187,7 +188,7 @@ def cmd_sequence(server, recv_flags, recv_seq, parsed_json, address, args):
     return
 
 # Determine what action to perform for a given packet
-def handle_packet(server, packet, address, args, config):
+def handle_packet(server, packet, address, args, config, no_auth=False):
     # Update connection status
     update_conn_status(address)
     # Unpack received packet
@@ -225,14 +226,14 @@ def handle_packet(server, packet, address, args, config):
         elif recv_flags['AUTH']:
             auth_sequence(server, recv_flags, recv_seq, json.loads(decrypt_aes(unpacked, key)), address, args, config)
             return
-        elif not get_conn_state(address, 'AUTHENTICATED'):
+        elif not get_conn_state(address, 'AUTHENTICATED') and not no_auth:
             if args.v: print('[!] Client did not provide username or authentication challenge solution')
             server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_PERM'}, address, args, key)
             return
         command_dict = json.loads(decrypt_aes(unpacked, key))
         cmd_sequence(server, recv_flags, recv_seq, command_dict, address, args)
         return
-    except EOFError as e:
+    except (EOFError, UnicodeDecodeError, json.decoder.JSONDecodeError) as e:
         if args.v: print('[!] Client sent invalid JSON')
         server_response(server, recv_flags, recv_seq+1, {'err': 'BAD_PKT'}, address, args, key)
         return
@@ -241,7 +242,7 @@ def handle_packet(server, packet, address, args, config):
 def listen_loop(server, args, config):
     while True:
         (packet, address) = server.recvfrom(BUFFER_SIZE)
-        handle_packet(server, packet, address, args, config)
+        handle_packet(server, packet, address, args, config, args.noauth)
 
 def main():
     args = parse_args()

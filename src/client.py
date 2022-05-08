@@ -18,8 +18,8 @@ def handle_args():
     # Parse arguments
     parser = argparse.ArgumentParser(description='Client application for Power Management Protocol (PMP).')
     parser.add_argument('-v', default=False, action='store_true', help='Perform verbose output')
-    parser.add_argument('--keyfile', '-k', required=True, help='(Required) Specify RSA private key file')
-    parser.add_argument('--user', '-u',required=True, help='(Required) Specify username for authentication')
+    parser.add_argument('--keyfile', '-k', help='Specify RSA private key file')
+    parser.add_argument('--user', '-u', default='', help='Specify username for authentication')
     parser.add_argument('--rhost', '-s', default='0.0.0.0', help='Specify the server IP address')
     parser.add_argument('--rport', '-p', default=8888, type=int, help='Specify the target port. Default: 8888')
     parser.add_argument('--lhost', '-a', default='0.0.0.0', help='Specify the local host IP address. Default: 0.0.0.0')
@@ -35,9 +35,10 @@ def handle_args():
     elif (args.lport >= 65535 or args.rport >= 65535):
         print('[!] Invalid port provided') 
         exit()
-    elif not os.path.isfile(args.keyfile) or not os.access(args.keyfile, os.R_OK):
-        print(f'[!] Keyfile {args.keyfile} does not exist or cannot be read')
-        exit()
+    elif args.keyfile != None:
+        if not os.path.isfile(args.keyfile) or not os.access(args.keyfile, os.R_OK):
+            print(f'[!] Keyfile {args.keyfile} does not exist or cannot be read')
+            exit()
     return args
 
 # Auto-increment the packet sequence number by 2
@@ -139,10 +140,12 @@ def main():
     # Calculate AES CBC key as SHA256 hash of the shared secret
     key = hashlib.sha256(diffie_hellman(args, client)).digest()
     if args.v: print('[+] Shared secrets established')
+   
+    # Optional authentication
+    if args.keyfile:
+        authenticate(args, client, key)
+        if args.v: print(f'[+] Successfully authenticated as {args.user}')
 
-    authenticate(args, client, key)
-    if args.v: print(f'[+] Successfully authenticated as {args.user}')
-    
     # Slightly more efficient than infinite loop with a break statement in a conditional
     while send_commands(client, args, key):
         pass
